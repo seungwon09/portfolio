@@ -1,0 +1,30 @@
+{
+  "title": "포트폴리오",
+  "description": "",
+  "projects": [
+    {
+      "slug": "humanoid",
+      "title": "휴머노이드 제작 및 제어",
+      "summary": "직접 설계한 구조와 모션을 실제 로봇에서 수정하며, 조종형 휴머노이드에서 자율형 시스템으로 개발을 이어가고 있습니다.",
+      "cover": "images/humanoid/image5.jpg"
+    },
+    {
+      "slug": "rocket",
+      "title": "3단 물로켓 설계·제작 및 단계 분리 실험",
+      "summary": "",
+      "cover": "images/rocket/image21.jpg"
+    },
+    {
+      "slug": "app",
+      "title": "앱 개발의 아이디어와 의사결정 과정",
+      "summary": "KITA · Timora · Jarvis",
+      "cover": "images/app/image2.png"
+    },
+    {
+      "slug": "airrobot",
+      "title": "에어로봇 설계 및 비행제어",
+      "summary": "직접 설계한 기체와 직접 작성한 코드를 연결해, 경기장 안에서 원 비행과 8자 비행을 완성했습니다.",
+      "cover": "images/airrobot/image1.jpg"
+    }
+  ]
+}
