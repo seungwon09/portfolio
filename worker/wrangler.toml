@@ -1,0 +1,11 @@
+name = "portfolio-api"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGINS = "https://seungwon09.github.io,http://localhost:8765"
+
+[[kv_namespaces]]
+binding = "CONTENT"
+id = "e11f37cd8fd14ed99e07676756d0e38e"
