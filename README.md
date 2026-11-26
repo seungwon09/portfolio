@@ -2,6 +2,19 @@
 
 GitHub Pages로 공개되는 정적 사이트입니다. 방문자는 보기만 가능하고, 이 저장소에 쓰기 권한이 있는 계정(본인)만 수정할 수 있습니다. 수정 사항을 `main` 브랜치에 커밋하면 1~2분 뒤 사이트에 반영됩니다.
 
+## 사이트 안에서 수정 (편집 모드)
+
+1. GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token
+   - Repository access: **Only select repositories** → `portfolio`
+   - Permissions → Repository permissions → **Contents: Read and write**
+2. 사이트 주소 뒤에 `/edit.html` 을 붙여 접속 (예: `https://seungwon09.github.io/portfolio/edit.html`)
+3. 토큰 입력 → 로그인. 토큰은 그 브라우저에만 저장됩니다.
+4. 로그인한 브라우저에서는 각 페이지 오른쪽 아래에 **이 페이지 수정** 버튼이 나타납니다.
+5. 편집 화면: 파일 선택 → 수정 → **저장**(또는 Ctrl+S). 미리보기, 이미지 업로드, 새 파일 만들기 지원.
+6. 공용 PC에서는 사용 후 **로그아웃**.
+
+토큰이 없는 방문자는 편집 버튼이 보이지 않고, `edit.html` 에 들어와도 저장할 수 없습니다.
+
 ## 파일 구조
 
 | 파일 | 역할 |

@@ -13,7 +13,17 @@ function renderTopbar(site, current) {
     `<a class="brand" href="./">${esc(site.title)}</a><nav class="nav">${links}</nav>`;
 }
 
+// 편집 모드로 로그인한 브라우저에서만 편집 버튼 표시
+function ownerButton(file) {
+  let t = ''; try { t = localStorage.getItem('portfolio-gh-token'); } catch {}
+  if (!t) return;
+  const a = document.createElement('a');
+  a.className = 'ed-fab'; a.href = 'edit.html?file=' + encodeURIComponent(file); a.textContent = '이 페이지 수정';
+  document.body.appendChild(a);
+}
+
 async function home() {
+  ownerButton('content/site.json');
   const site = await loadSite();
   document.title = site.title;
   renderTopbar(site, null);
@@ -91,6 +101,7 @@ async function project() {
   const el = document.getElementById('content');
   if (!meta) { el.innerHTML = '<p>페이지를 찾을 수 없습니다.</p>'; return; }
   document.title = `${meta.title} · ${site.title}`;
+  ownerButton(`content/${slug}.md`);
   const md = await (await fetch(`content/${slug}.md`, { cache: 'no-cache' })).text();
   el.innerHTML = marked.parse(md);
   enhance(el);
