@@ -74,3 +74,10 @@ dialog#picker::backdrop { background: rgb(0 0 0 / .4); }
   .ad-main { padding: 16px; }
   .ad-editor.split { grid-template-columns: 1fr; }
 }
+
+.ad-videos { display: grid; gap: 12px; }
+.ad-video { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--surface); }
+.ad-video video { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 6px; }
+.ad-video > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.ad-video .name { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+@media (max-width: 600px) { .ad-video { grid-template-columns: 1fr; } }

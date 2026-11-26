@@ -83,8 +83,83 @@ async function uploadMany(files, folder) {
   return out;
 }
 
-const pickFiles = (multiple) => new Promise(resolve => {
-  const inp = multiple ? $('multiInput') : $('fileInput');
+// ---------- 영상 압축·업로드 ----------
+const MEDIABUNNY_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.65.2/dist/bundles/mediabunny.min.mjs';
+const VIDEO_MAX_SIDE = 1920;               // 긴 변 최대 1920px (1080p)
+const VIDEO_PART_BYTES = 25 * 1024 * 1024; // 분할 업로드 조각 크기
+let mbPromise = null;
+
+// 브라우저에서 H.264 MP4로 다시 인코딩. 지원하지 않거나 실패하면 null
+async function compressVideo(file, onProgress) {
+  if (!('VideoEncoder' in window)) return null;
+  const MB = await (mbPromise ||= import(MEDIABUNNY_URL));
+  const input = new MB.Input({ source: new MB.BlobSource(file), formats: MB.ALL_FORMATS });
+  const output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new MB.BufferTarget() });
+  const conv = await MB.Conversion.init({
+    input, output,
+    video: track => {
+      const w = track.displayWidth, h = track.displayHeight;
+      const opt = { codec: 'avc', bitrate: MB.QUALITY_MEDIUM };
+      if (Math.max(w, h) > VIDEO_MAX_SIDE) {
+        if (w >= h) opt.width = VIDEO_MAX_SIDE; else opt.height = VIDEO_MAX_SIDE;
+      }
+      return opt;
+    },
+    audio: { codec: 'aac', bitrate: 128e3 },
+  });
+  if (!conv.isValid) return null;
+  conv.onProgress = onProgress;
+  await conv.execute();
+  return new Blob([output.target.buffer], { type: 'video/mp4' });
+}
+
+async function uploadVideo(file, folder) {
+  const mb = n => (n / 1048576).toFixed(1) + 'MB';
+  let blob = file, note = '';
+  try {
+    msg(`영상 압축 준비 중… (${mb(file.size)})`);
+    const out = await compressVideo(file, p => msg(`영상 압축 중… ${Math.round(p * 100)}%`));
+    if (out && out.size < file.size) { blob = out; note = `압축 ${mb(file.size)} → ${mb(out.size)}`; }
+    else note = out ? '압축 결과가 원본보다 커서 원본 사용' : '이 브라우저에서 압축할 수 없어 원본 사용';
+  } catch (e) { note = '압축 실패로 원본 사용'; }
+  const type = blob === file ? (file.type || 'video/mp4') : 'video/mp4';
+  const ext = blob === file ? ((file.name.split('.').pop() || 'mp4').toLowerCase()) : 'mp4';
+  const base = file.name.replace(/\.[^.]+$/, '').replace(/[^\w\-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'video';
+  const path = `${folder || 'misc'}/${Date.now().toString(36)}-${base}.${ext}`;
+  const ep = '/api/video-upload/' + encodeURI(path);
+  const { uploadId } = await api(ep, { method: 'POST', headers: { 'Content-Type': type } });
+  const q = 'uploadId=' + encodeURIComponent(uploadId);
+  const parts = [];
+  try {
+    const total = Math.ceil(blob.size / VIDEO_PART_BYTES) || 1;
+    for (let n = 1; n <= total; n++) {
+      msg(`영상 업로드 중… ${Math.round(((n - 1) / total) * 100)}% (${note})`);
+      const chunk = blob.slice((n - 1) * VIDEO_PART_BYTES, n * VIDEO_PART_BYTES);
+      let r, tries = 0;
+      for (;;) {
+        try { r = await api(`${ep}?${q}&partNumber=${n}`, { method: 'PUT', body: chunk }); break; }
+        catch (e) { if (++tries >= 3) throw e; }
+      }
+      parts.push({ n, etag: r.etag });
+    }
+    await api(`${ep}?${q}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parts, type, size: blob.size }) });
+  } catch (e) {
+    api(`${ep}?${q}`, { method: 'DELETE' }).catch(() => {});
+    throw e;
+  }
+  return { path: 'video/' + path, note };
+}
+
+async function insertVideoFiles(files) {
+  for (const f of files) {
+    const { path, note } = await uploadVideo(f, currentSlug);
+    insertAtCursor(`\n\n<video src="${path}"></video>\n\n`);
+    msg(`영상을 올리고 본문에 넣었습니다. (${note})`, 'ok');
+  }
+}
+
+const pickFiles = (multiple, kind) => new Promise(resolve => {
+  const inp = kind === 'video' ? $('videoInput') : multiple ? $('multiInput') : $('fileInput');
   inp.value = '';
   inp.onchange = () => resolve([...inp.files]);
   inp.click();
@@ -149,6 +224,31 @@ function loadMediaView() {
   renderMediaGrid($('mediaGrid'), async path => {
     try { await navigator.clipboard.writeText(`![](${path})`); msg('본문용 코드를 복사했습니다: ' + `![](${path})`, 'ok'); } catch { prompt('복사해서 사용하세요', `![](${path})`); }
   }, true).catch(e => msg(e.message, 'err'));
+  renderVideoList().catch(e => msg(e.message, 'err'));
+}
+
+async function renderVideoList() {
+  const box = $('videoGrid');
+  box.innerHTML = '<p class="ad-hint">불러오는 중…</p>';
+  const { items } = await api('/api/videos');
+  items.sort((a, b) => (a.path < b.path ? 1 : -1));
+  box.innerHTML = items.length ? '' : '<p class="ad-hint">업로드한 영상이 없습니다.</p>';
+  for (const v of items) {
+    const row = document.createElement('div');
+    row.className = 'ad-video';
+    row.innerHTML = `<video src="${API}/video/${encodeURI(v.path)}" preload="metadata" controls playsinline></video>
+      <div><button class="ed-btn sm name">${esc(v.path)}</button><span class="ad-hint">${v.size ? (v.size / 1048576).toFixed(1) + 'MB' : ''}</span>
+      <button class="ed-btn sm danger del">삭제</button></div>`;
+    const code = `<video src="video/${v.path}"></video>`;
+    row.querySelector('.name').onclick = async () => {
+      try { await navigator.clipboard.writeText(code); msg('본문용 코드를 복사했습니다: ' + code, 'ok'); } catch { prompt('복사해서 사용하세요', code); }
+    };
+    row.querySelector('.del').onclick = async () => {
+      if (!confirm('이 영상을 삭제할까요? 본문에서 쓰고 있다면 그 자리에 영상이 재생되지 않게 됩니다.')) return;
+      try { await api('/api/video/' + encodeURI(v.path), { method: 'DELETE' }); row.remove(); msg('삭제했습니다.', 'ok'); } catch (e) { msg(e.message, 'err'); }
+    };
+    box.appendChild(row);
+  }
 }
 
 function openPicker(cb) {
@@ -289,10 +389,20 @@ $('insGallery').onclick = async () => {
   } catch (e) { msg(e.message, 'err'); }
 };
 
-// 붙여넣기·끌어놓기로 사진 넣기
+$('insVideo').onclick = async () => {
+  const files = await pickFiles(false, 'video');
+  if (!files.length) return;
+  $('insVideo').disabled = true;
+  try { await insertVideoFiles(files); } catch (e) { msg('영상 업로드 실패: ' + e.message, 'err'); }
+  finally { $('insVideo').disabled = false; }
+};
+
+// 붙여넣기·끌어놓기로 사진·영상 넣기
 async function handleDroppedFiles(files) {
+  const vids = [...files].filter(f => f.type.startsWith('video/'));
+  if (vids.length) { try { await insertVideoFiles(vids); } catch (e) { msg('영상 업로드 실패: ' + e.message, 'err'); } }
   const imgs = [...files].filter(f => f.type.startsWith('image/'));
-  if (!imgs.length) return false;
+  if (!imgs.length) return vids.length > 0;
   try {
     const paths = await uploadMany(imgs, currentSlug);
     insertAtCursor(paths.length === 1 ? `\n\n![사진 설명](${paths[0]})\n\n` : `\n\n<div class="gallery">\n\n${paths.map(p => `![](${p})`).join('\n')}\n\n</div>\n\n`);

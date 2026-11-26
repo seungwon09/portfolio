@@ -6,10 +6,14 @@
 //   page:<slug>     프로젝트 본문 (Markdown)
 //   media:<path>    사진 (바이너리, metadata.type = MIME)
 //   rl:<ip>         로그인 실패 횟수 (자동 만료)
+//   video:<path>    영상 목록 (값 없음, metadata = { type, size }). 영상 파일 자체는 Backblaze B2
 //
 // 비밀값 (wrangler secret)
 //   ADMIN_PASSWORD  관리자 비밀번호
 //   SESSION_SECRET  세션 서명 키
+//   B2_KEY_ID       Backblaze B2 keyID
+//   B2_APP_KEY      Backblaze B2 applicationKey
+// 일반 변수 (wrangler.toml): B2_BUCKET, B2_ENDPOINT
 
 const SESSION_HOURS = 12;
 const MAX_FAILS = 5;
@@ -24,7 +28,8 @@ function cors(req, env) {
   return {
     'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0] || '*',
     'Access-Control-Allow-Methods': 'GET, PUT, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range',
+    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -68,6 +73,47 @@ async function isAdmin(req, env) {
 const validSlug = s => /^[a-z0-9][a-z0-9-]{0,60}$/.test(s);
 const validMediaPath = p => /^[a-z0-9-]{1,60}\/[\w.\-]{1,120}$/i.test(p) && !p.includes('..');
 
+// ---------- Backblaze B2 (S3 호환 API, AWS Signature V4) ----------
+const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+const sha256hex = async s => hex(await crypto.subtle.digest('SHA-256', enc.encode(s)));
+async function hmacRaw(key, data) {
+  const k = await crypto.subtle.importKey('raw', typeof key === 'string' ? enc.encode(key) : key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.sign('HMAC', k, enc.encode(data));
+}
+const rfc3986 = s => encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+
+// signHeaders: 서명에 포함할 헤더, extraHeaders: 서명하지 않고 전달할 헤더(Range 등)
+async function b2(env, method, key, { query = {}, signHeaders = {}, extraHeaders = {}, body = null } = {}) {
+  if (!env.B2_KEY_ID || !env.B2_APP_KEY || !env.B2_BUCKET || !env.B2_ENDPOINT) throw new Error('영상 저장소 설정이 없습니다.');
+  const host = env.B2_ENDPOINT;
+  const region = host.split('.')[1];
+  const uri = '/' + env.B2_BUCKET + '/' + key.split('/').map(rfc3986).join('/');
+  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const day = amzDate.slice(0, 8);
+  const qs = Object.keys(query).sort().map(k => `${rfc3986(k)}=${rfc3986(query[k])}`).join('&');
+  const h = { host, 'x-amz-content-sha256': 'UNSIGNED-PAYLOAD', 'x-amz-date': amzDate };
+  for (const [k, v] of Object.entries(signHeaders)) h[k.toLowerCase()] = String(v).trim();
+  const names = Object.keys(h).sort();
+  const canonical = [method, uri, qs, names.map(n => `${n}:${h[n]}\n`).join(''), names.join(';'), 'UNSIGNED-PAYLOAD'].join('\n');
+  const scope = `${day}/${region}/s3/aws4_request`;
+  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256hex(canonical)].join('\n');
+  let k = await hmacRaw('AWS4' + env.B2_APP_KEY, day);
+  for (const part of [region, 's3', 'aws4_request']) k = await hmacRaw(k, part);
+  const sig = hex(await hmacRaw(k, toSign));
+  const headers = { ...h, ...extraHeaders, Authorization: `AWS4-HMAC-SHA256 Credential=${env.B2_KEY_ID}/${scope}, SignedHeaders=${names.join(';')}, Signature=${sig}` };
+  delete headers.host;
+  return fetch(`https://${host}${uri}${qs ? '?' + qs : ''}`, { method, headers, body });
+}
+
+async function b2ok(res, what) {
+  if (res.ok) return res;
+  const t = await res.text();
+  const m = t.match(/<Message>([^<]*)<\/Message>/);
+  throw new Error(`${what} 실패 (${res.status}${m ? ': ' + m[1] : ''})`);
+}
+
+const VIDEO_PREFIX = 'v/';
+
 async function login(req, env) {
   if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET) return json({ error: '서버 비밀값이 설정되지 않았습니다.' }, 500);
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
@@ -104,6 +150,17 @@ async function handle(req, env) {
     const { value, metadata } = await env.CONTENT.getWithMetadata(`media:${p}`, 'arrayBuffer');
     if (!value) return new Response('not found', { status: 404 });
     return new Response(value, { headers: { 'Content-Type': (metadata && metadata.type) || 'application/octet-stream', 'Cache-Control': 'public, max-age=31536000, immutable' } });
+  }
+
+  if ((m === 'GET' || m === 'HEAD') && (mm = path.match(/^\/video\/(.+)$/))) {
+    const p = decodeURIComponent(mm[1]);
+    if (!validMediaPath(p)) return new Response('not found', { status: 404 });
+    const range = req.headers.get('Range');
+    const r = await b2(env, m, VIDEO_PREFIX + p, { extraHeaders: range ? { Range: range } : {} });
+    if (r.status === 404 || r.status === 403) return new Response('not found', { status: 404 });
+    const out = new Headers({ 'Cache-Control': 'public, max-age=31536000, immutable', 'Accept-Ranges': 'bytes' });
+    for (const n of ['Content-Type', 'Content-Length', 'Content-Range', 'ETag', 'Last-Modified']) { const v = r.headers.get(n); if (v) out.set(n, v); }
+    return new Response(r.body, { status: r.status, headers: out });
   }
 
   // ---------- 로그인 ----------
@@ -151,6 +208,62 @@ async function handle(req, env) {
       return json({ ok: true, url: `/media/${p}` });
     }
     if (m === 'DELETE') { await env.CONTENT.delete(`media:${p}`); return json({ ok: true }); }
+  }
+  // 영상 목록
+  if (m === 'GET' && path === '/api/videos') {
+    const items = [];
+    let cursor;
+    do {
+      const r = await env.CONTENT.list({ prefix: 'video:', cursor });
+      items.push(...r.keys.map(k => ({ path: k.name.slice(6), ...(k.metadata || {}) })));
+      cursor = r.list_complete ? null : r.cursor;
+    } while (cursor);
+    return json({ items });
+  }
+  // 영상 업로드 (분할 업로드: 시작 → 조각 PUT → 완료)
+  if ((mm = path.match(/^\/api\/video-upload\/(.+)$/))) {
+    const p = decodeURIComponent(mm[1]);
+    if (!validMediaPath(p)) return json({ error: '파일 경로 형식 오류' }, 400);
+    const key = VIDEO_PREFIX + p;
+    const uploadId = url.searchParams.get('uploadId');
+    if (m === 'POST' && !uploadId) {
+      const type = req.headers.get('Content-Type') || '';
+      if (!type.startsWith('video/')) return json({ error: '영상 파일만 업로드할 수 있습니다.' }, 400);
+      const r = await b2ok(await b2(env, 'POST', key, { query: { uploads: '' }, signHeaders: { 'content-type': type } }), '업로드 시작');
+      const id = (await r.text()).match(/<UploadId>([^<]+)<\/UploadId>/);
+      if (!id) return json({ error: '업로드 ID를 받지 못했습니다.' }, 502);
+      return json({ uploadId: id[1] });
+    }
+    if (m === 'PUT' && uploadId) {
+      const n = Number(url.searchParams.get('partNumber'));
+      const len = Number(req.headers.get('Content-Length'));
+      if (!(n >= 1 && n <= 10000) || !len) return json({ error: '조각 정보 오류' }, 400);
+      const { readable, writable } = new FixedLengthStream(len);
+      req.body.pipeTo(writable);
+      const r = await b2ok(await b2(env, 'PUT', key, { query: { partNumber: String(n), uploadId }, body: readable }), `조각 ${n} 업로드`);
+      return json({ etag: r.headers.get('ETag') });
+    }
+    if (m === 'POST' && uploadId) {
+      const { parts, type, size } = await req.json();
+      if (!Array.isArray(parts) || !parts.length) return json({ error: '조각 목록이 없습니다.' }, 400);
+      const xml = '<CompleteMultipartUpload>' + parts.map(x => `<Part><PartNumber>${Number(x.n)}</PartNumber><ETag>${String(x.etag).replace(/[<>&]/g, '')}</ETag></Part>`).join('') + '</CompleteMultipartUpload>';
+      const r = await b2ok(await b2(env, 'POST', key, { query: { uploadId }, signHeaders: { 'content-type': 'application/xml' }, body: xml }), '업로드 완료');
+      if (/<Error>/.test(await r.text())) return json({ error: '업로드 완료 처리 실패' }, 502);
+      await env.CONTENT.put(`video:${p}`, '', { metadata: { type: String(type || ''), size: Number(size) || 0 } });
+      return json({ ok: true, url: `/video/${p}` });
+    }
+    if (m === 'DELETE' && uploadId) {
+      await b2(env, 'DELETE', key, { query: { uploadId } });
+      return json({ ok: true });
+    }
+  }
+  if (m === 'DELETE' && (mm = path.match(/^\/api\/video\/(.+)$/))) {
+    const p = decodeURIComponent(mm[1]);
+    if (!validMediaPath(p)) return json({ error: '파일 경로 형식 오류' }, 400);
+    const r = await b2(env, 'DELETE', VIDEO_PREFIX + p);
+    if (!r.ok && r.status !== 404) await b2ok(r, '영상 삭제');
+    await env.CONTENT.delete(`video:${p}`);
+    return json({ ok: true });
   }
   return json({ error: 'not found' }, 404);
 }

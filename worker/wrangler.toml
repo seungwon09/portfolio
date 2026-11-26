@@ -5,6 +5,8 @@ workers_dev = true
 
 [vars]
 ALLOWED_ORIGINS = "https://seungwon09.github.io,http://localhost:8765"
+B2_BUCKET = "seungwon-portfolio-video"
+B2_ENDPOINT = "s3.us-east-005.backblazeb2.com"
 
 [[kv_namespaces]]
 binding = "CONTENT"

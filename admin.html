@@ -27,7 +27,7 @@
       <div class="ad-side-head"><a href="./" target="_blank">사이트 보기 ↗</a><button class="ed-btn sm" id="logoutBtn">로그아웃</button></div>
       <button class="ad-nav" data-view="site">사이트 정보</button>
       <button class="ad-nav" data-view="design">디자인</button>
-      <button class="ad-nav" data-view="media">사진 보관함</button>
+      <button class="ad-nav" data-view="media">사진·영상 보관함</button>
       <div class="ad-side-title">프로젝트</div>
       <ul class="ad-projects" id="projectList"></ul>
       <button class="ed-btn" id="addProject">+ 새 프로젝트</button>
@@ -57,9 +57,12 @@
 
       <!-- 사진 보관함 -->
       <section class="ad-view" id="view-media" hidden>
-        <h2>사진 보관함</h2>
+        <h2>사진</h2>
         <p class="ad-hint">업로드한 사진 전체입니다. 사진을 누르면 경로가 복사됩니다.</p>
         <div class="ad-media" id="mediaGrid"></div>
+        <h2 style="margin-top:40px">영상</h2>
+        <p class="ad-hint">업로드한 영상 전체입니다. 영상 이름을 누르면 본문용 코드가 복사됩니다.</p>
+        <div class="ad-videos" id="videoGrid"></div>
       </section>
 
       <!-- 프로젝트 -->
@@ -89,7 +92,7 @@
           <span class="ad-sep"></span>
           <button class="ed-btn sm" id="insImage">사진</button>
           <button class="ed-btn sm" id="insGallery">사진 여러 장</button>
-          <button class="ed-btn sm" id="insVideo" title="영상 저장소 연결 후 사용 가능" disabled>영상</button>
+          <button class="ed-btn sm" id="insVideo">영상</button>
           <span class="ed-spacer"></span>
           <button class="ed-btn sm" id="togglePreview">미리보기</button>
         </div>
@@ -103,6 +106,7 @@
 
   <input type="file" id="fileInput" accept="image/*" hidden>
   <input type="file" id="multiInput" accept="image/*" multiple hidden>
+  <input type="file" id="videoInput" accept="video/*" hidden>
 
   <!-- 사진 선택 창 -->
   <dialog id="picker">
