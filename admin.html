@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>관리자 · 포트폴리오</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="assets/admin.css">
+</head>
+<body>
+  <!-- 로그인 -->
+  <section class="ad-login" id="loginView" hidden>
+    <h1>관리자 로그인</h1>
+    <form id="loginForm">
+      <input type="password" id="password" placeholder="비밀번호" autocomplete="current-password" required>
+      <button class="ed-btn primary" type="submit">로그인</button>
+    </form>
+    <p class="ed-msg" id="loginMsg"></p>
+    <p><a href="./">← 사이트로 돌아가기</a></p>
+  </section>
+
+  <!-- 관리 화면 -->
+  <div class="ad-shell" id="appView" hidden>
+    <aside class="ad-side">
+      <div class="ad-side-head"><a href="./" target="_blank">사이트 보기 ↗</a><button class="ed-btn sm" id="logoutBtn">로그아웃</button></div>
+      <button class="ad-nav" data-view="site">사이트 정보</button>
+      <button class="ad-nav" data-view="design">디자인</button>
+      <button class="ad-nav" data-view="media">사진 보관함</button>
+      <div class="ad-side-title">프로젝트</div>
+      <ul class="ad-projects" id="projectList"></ul>
+      <button class="ed-btn" id="addProject">+ 새 프로젝트</button>
+    </aside>
+
+    <main class="ad-main">
+      <p class="ed-msg ad-status" id="msg"></p>
+
+      <!-- 사이트 정보 -->
+      <section class="ad-view" id="view-site" hidden>
+        <h2>사이트 정보</h2>
+        <label>사이트 제목<input id="siteTitle"></label>
+        <label>소개 문구 (첫 화면 제목 아래)<textarea id="siteDesc" rows="3"></textarea></label>
+        <button class="ed-btn primary" id="saveSite">저장</button>
+      </section>
+
+      <!-- 디자인 -->
+      <section class="ad-view" id="view-design" hidden>
+        <h2>디자인</h2>
+        <div class="ad-grid" id="designFields"></div>
+        <label class="ad-check"><input type="checkbox" id="darkMode"> 기기가 다크 모드면 어두운 색으로 표시</label>
+        <div class="ad-actions">
+          <button class="ed-btn" id="resetDesign">기본값으로</button>
+          <button class="ed-btn primary" id="saveDesign">저장</button>
+        </div>
+      </section>
+
+      <!-- 사진 보관함 -->
+      <section class="ad-view" id="view-media" hidden>
+        <h2>사진 보관함</h2>
+        <p class="ad-hint">업로드한 사진 전체입니다. 사진을 누르면 경로가 복사됩니다.</p>
+        <div class="ad-media" id="mediaGrid"></div>
+      </section>
+
+      <!-- 프로젝트 -->
+      <section class="ad-view" id="view-project" hidden>
+        <div class="ad-head">
+          <h2 id="projHeading"></h2>
+          <span class="ed-spacer"></span>
+          <a class="ed-btn" id="viewLink" target="_blank">페이지 보기 ↗</a>
+          <button class="ed-btn danger" id="deleteProject">삭제</button>
+          <button class="ed-btn primary" id="saveProject">저장 (Ctrl+S)</button>
+        </div>
+        <div class="ad-grid">
+          <label>제목<input id="pTitle"></label>
+          <label>주소 이름 (영문)<input id="pSlug" disabled></label>
+          <label class="wide">요약 (첫 화면 카드)<input id="pSummary"></label>
+          <label>대표 사진<span class="ad-cover"><img id="pCoverImg" alt=""><button class="ed-btn sm" id="pCoverBtn">사진 선택</button></span></label>
+          <label class="ad-check"><input type="checkbox" id="pHidden"> 사이트에서 숨기기</label>
+        </div>
+
+        <div class="ad-toolbar">
+          <button class="ed-btn sm" data-ins="h2">대단원</button>
+          <button class="ed-btn sm" data-ins="h3">소단원</button>
+          <button class="ed-btn sm" data-ins="bold">굵게</button>
+          <button class="ed-btn sm" data-ins="quote">강조 문구</button>
+          <button class="ed-btn sm" data-ins="table">표</button>
+          <button class="ed-btn sm" data-ins="caption">작은 설명</button>
+          <span class="ad-sep"></span>
+          <button class="ed-btn sm" id="insImage">사진</button>
+          <button class="ed-btn sm" id="insGallery">사진 여러 장</button>
+          <button class="ed-btn sm" id="insVideo" title="영상 저장소 연결 후 사용 가능" disabled>영상</button>
+          <span class="ed-spacer"></span>
+          <button class="ed-btn sm" id="togglePreview">미리보기</button>
+        </div>
+        <div class="ad-editor" id="editorPanes">
+          <textarea id="body" spellcheck="false"></textarea>
+          <article class="content ad-preview" id="preview" hidden></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <input type="file" id="fileInput" accept="image/*" hidden>
+  <input type="file" id="multiInput" accept="image/*" multiple hidden>
+
+  <!-- 사진 선택 창 -->
+  <dialog id="picker">
+    <div class="ad-head"><h3>사진 선택</h3><span class="ed-spacer"></span><button class="ed-btn sm" id="pickerUpload">새로 업로드</button><button class="ed-btn sm" id="pickerClose">닫기</button></div>
+    <div class="ad-media" id="pickerGrid"></div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="assets/site.js"></script>
+  <script src="assets/admin.js"></script>
+</body>
+</html>
