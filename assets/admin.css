@@ -81,3 +81,7 @@ dialog#picker::backdrop { background: rgb(0 0 0 / .4); }
 .ad-video > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
 .ad-video .name { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 @media (max-width: 600px) { .ad-video { grid-template-columns: 1fr; } }
+
+/* 미리보기 사진: 클릭해서 교체 */
+.ad-preview img { cursor: pointer; transition: outline-color .15s; outline: 3px solid transparent; outline-offset: -3px; }
+.ad-preview img:hover { outline-color: var(--accent); }

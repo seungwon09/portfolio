@@ -419,9 +419,33 @@ let previewTimer;
 function renderPreview() {
   if ($('preview').hidden) return;
   clearTimeout(previewTimer);
-  previewTimer = setTimeout(() => { const p = $('preview'); p.innerHTML = marked.parse($('body').value); enhance(p); }, 200);
+  previewTimer = setTimeout(() => { const p = $('preview'); p.innerHTML = marked.parse($('body').value); enhance(p); p.querySelectorAll('figure a').forEach(a => a.title = '클릭해서 사진 교체'); }, 200);
 }
 $('body').addEventListener('input', () => { dirty = true; renderPreview(); });
+
+// 미리보기에서 사진을 누르면 새 파일로 교체
+const srcPath = img => { const s = img.getAttribute('src') || ''; return s.startsWith(API + '/') ? s.slice(API.length + 1) : s; };
+$('preview').addEventListener('click', async e => {
+  const img = e.target.closest('img');
+  if (!img) return;
+  e.preventDefault();
+  const oldPath = srcPath(img);
+  // 같은 사진이 여러 번 쓰였을 때 몇 번째인지 계산
+  const nth = [...$('preview').querySelectorAll('img')].filter(i => srcPath(i) === oldPath).indexOf(img);
+  const files = await pickFiles(false);
+  if (!files.length) return;
+  try {
+    msg('사진 교체 중…');
+    const newPath = await uploadImage(files[0], currentSlug);
+    const ta = $('body'), v = ta.value;
+    let at = -1;
+    for (let k = 0; k <= nth; k++) { at = v.indexOf(oldPath, at + 1); if (at < 0) break; }
+    if (at < 0) { msg('본문에서 이 사진의 위치를 찾지 못했습니다.', 'err'); return; }
+    ta.value = v.slice(0, at) + newPath + v.slice(at + oldPath.length);
+    dirty = true; renderPreview();
+    msg('사진을 교체했습니다. 저장을 눌러야 사이트에 반영됩니다.', 'ok');
+  } catch (err) { msg(err.message, 'err'); }
+});
 $('togglePreview').onclick = () => {
   const p = $('preview'); p.hidden = !p.hidden;
   $('editorPanes').classList.toggle('split', !p.hidden);
